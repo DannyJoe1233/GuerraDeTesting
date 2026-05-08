@@ -21,16 +21,29 @@ public class Curso {
     }
 
     public Curso(String id, String nombre, int creditos, int cupos, String horario, List<String> requisitos) {
-        this.id = id;
-        this.nombre = nombre;
+        if (isBlank(id) || isBlank(nombre) || isBlank(horario)) {
+            throw new IllegalArgumentException("ID, nombre y horario del curso son obligatorios.");
+        }
+        if (creditos <= 0) {
+            throw new IllegalArgumentException("Los créditos del curso deben ser mayores a 0.");
+        }
+        if (cupos <= 0) {
+            throw new IllegalArgumentException("El cupo máximo del curso debe ser mayor a 0.");
+        }
+
+        this.id = id.trim().toUpperCase();
+        this.nombre = nombre.trim();
         this.creditos = creditos;
         this.cuposMaximos = cupos;
-        this.horario = horario;
+        this.horario = horario.trim();
         this.requisitos = new ArrayList<>();
         if (requisitos != null) {
             for (String requisito : requisitos) {
                 if (requisito != null && !requisito.trim().isEmpty()) {
-                    this.requisitos.add(requisito.trim().toUpperCase());
+                    String normalizado = requisito.trim().toUpperCase();
+                    if (!normalizado.equals(this.id) && !this.requisitos.contains(normalizado)) {
+                        this.requisitos.add(normalizado);
+                    }
                 }
             }
         }
@@ -41,22 +54,34 @@ public class Curso {
     }
 
     public boolean matricularAlumno(String codigoAlumno) {
+        String normalizado = normalizarCodigo(codigoAlumno);
+        if (normalizado == null) {
+            return false;
+        }
         if (!tieneCupo()) {
             return false;
         }
-        return alumnosMatriculados.add(codigoAlumno.toUpperCase());
+        return alumnosMatriculados.add(normalizado);
     }
 
     public boolean retirarAlumno(String codigoAlumno) {
-        return alumnosMatriculados.remove(codigoAlumno.toUpperCase());
+        String normalizado = normalizarCodigo(codigoAlumno);
+        if (normalizado == null) {
+            return false;
+        }
+        return alumnosMatriculados.remove(normalizado);
     }
 
     public boolean estaMatriculado(String codigoAlumno) {
-        return alumnosMatriculados.contains(codigoAlumno.toUpperCase());
+        String normalizado = normalizarCodigo(codigoAlumno);
+        return normalizado != null && alumnosMatriculados.contains(normalizado);
     }
 
     public boolean agregarListaEspera(String codigoAlumno) {
-        String normalizado = codigoAlumno.toUpperCase();
+        String normalizado = normalizarCodigo(codigoAlumno);
+        if (normalizado == null) {
+            return false;
+        }
         if (listaEspera.contains(normalizado)) {
             return false;
         }
@@ -65,7 +90,11 @@ public class Curso {
     }
 
     public boolean retirarDeListaEspera(String codigoAlumno) {
-        return listaEspera.remove(codigoAlumno.toUpperCase());
+        String normalizado = normalizarCodigo(codigoAlumno);
+        if (normalizado == null) {
+            return false;
+        }
+        return listaEspera.remove(normalizado);
     }
 
     public String obtenerSiguienteEnEspera() {
@@ -73,7 +102,8 @@ public class Curso {
     }
 
     public boolean estaEnListaEspera(String codigoAlumno) {
-        return listaEspera.contains(codigoAlumno.toUpperCase());
+        String normalizado = normalizarCodigo(codigoAlumno);
+        return normalizado != null && listaEspera.contains(normalizado);
     }
 
     public String getHorario() { return horario; }
@@ -86,4 +116,15 @@ public class Curso {
     public List<String> getRequisitos() { return Collections.unmodifiableList(requisitos); }
     public List<String> getAlumnosMatriculados() { return new ArrayList<>(alumnosMatriculados); }
     public List<String> getListaEspera() { return new ArrayList<>(listaEspera); }
+
+    private String normalizarCodigo(String codigoAlumno) {
+        if (isBlank(codigoAlumno)) {
+            return null;
+        }
+        return codigoAlumno.trim().toUpperCase();
+    }
+
+    private boolean isBlank(String valor) {
+        return valor == null || valor.trim().isEmpty();
+    }
 }

@@ -3,8 +3,13 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.util.List;
 import java.util.StringJoiner;
+import java.util.regex.Pattern;
 
 public class VentanaMatricula extends JFrame {
+    private static final Pattern CODIGO_ALUMNO_PATTERN = Pattern.compile("^\\d{8}$");
+    private static final Pattern ID_CURSO_PATTERN = Pattern.compile("^[A-Z]{3}-\\d{2}$");
+    private static final Pattern NOMBRE_PATTERN = Pattern.compile("^[\\p{L} .'-]{3,80}$");
+
     private final SistemaMatricula sistema = new SistemaMatricula();
 
     private final DefaultTableModel modeloAlumnos = new DefaultTableModel(
@@ -144,24 +149,52 @@ public class VentanaMatricula extends JFrame {
         JButton btnAprobado = new JButton("Agregar aprobado");
         JButton btnLimpiar = new JButton("Limpiar");
 
-        btnRegistrar.addActionListener(e -> ejecutarAccion(sistema.registrarAlumno(
-                txtCodigoAlumno.getText(),
-                txtNombreAlumno.getText(),
-                txtCarreraAlumno.getText()
-        )));
+        btnRegistrar.addActionListener(e -> {
+            if (!validarEntradaAlumno(true)) {
+                return;
+            }
+            ejecutarAccion(sistema.registrarAlumno(
+                    normalizarCodigoAlumno(txtCodigoAlumno.getText()),
+                    normalizarNombre(txtNombreAlumno.getText()),
+                    normalizarTextoGeneral(txtCarreraAlumno.getText())
+            ));
+        });
 
-        btnEditar.addActionListener(e -> ejecutarAccion(sistema.editarAlumno(
-                txtCodigoAlumno.getText(),
-                txtNombreAlumno.getText(),
-                txtCarreraAlumno.getText()
-        )));
+        btnEditar.addActionListener(e -> {
+            if (!validarEntradaAlumno(true)) {
+                return;
+            }
+            ejecutarAccion(sistema.editarAlumno(
+                    normalizarCodigoAlumno(txtCodigoAlumno.getText()),
+                    normalizarNombre(txtNombreAlumno.getText()),
+                    normalizarTextoGeneral(txtCarreraAlumno.getText())
+            ));
+        });
 
-        btnBaja.addActionListener(e -> ejecutarAccion(sistema.darBajaAlumno(txtCodigoAlumno.getText())));
+        btnBaja.addActionListener(e -> {
+            if (!validarEntradaAlumno(false)) {
+                return;
+            }
+            ejecutarAccion(sistema.darBajaAlumno(
+                    normalizarCodigoAlumno(txtCodigoAlumno.getText())
+            ));
+        });
 
         btnAprobado.addActionListener(e -> {
             String idCurso = JOptionPane.showInputDialog(this, "ID del curso aprobado (RF06):");
             if (idCurso != null) {
-                ejecutarAccion(sistema.registrarCursoAprobado(txtCodigoAlumno.getText(), idCurso));
+                if (!validarEntradaAlumno(false)) {
+                    return;
+                }
+                String idNormalizado = normalizarIdCurso(idCurso);
+                if (isBlank(idNormalizado) || !ID_CURSO_PATTERN.matcher(idNormalizado).matches()) {
+                    mostrarAdvertencia("El ID de curso aprobado debe tener formato ABC-99.");
+                    return;
+                }
+                ejecutarAccion(sistema.registrarCursoAprobado(
+                        normalizarCodigoAlumno(txtCodigoAlumno.getText()),
+                        idNormalizado
+                ));
             }
         });
 
@@ -198,6 +231,10 @@ public class VentanaMatricula extends JFrame {
                 mostrarAdvertencia("Selecciona alumno y curso.");
                 return;
             }
+            if (!CODIGO_ALUMNO_PATTERN.matcher(alumno).matches() || !ID_CURSO_PATTERN.matcher(curso).matches()) {
+                mostrarAdvertencia("Alumno o curso seleccionado tiene formato inválido.");
+                return;
+            }
             ejecutarAccion(sistema.matricularAlumnoEnCurso(alumno, curso));
         });
 
@@ -206,6 +243,10 @@ public class VentanaMatricula extends JFrame {
             String curso = idCursoSeleccionado();
             if (alumno.isEmpty() || curso.isEmpty()) {
                 mostrarAdvertencia("Selecciona alumno y curso.");
+                return;
+            }
+            if (!CODIGO_ALUMNO_PATTERN.matcher(alumno).matches() || !ID_CURSO_PATTERN.matcher(curso).matches()) {
+                mostrarAdvertencia("Alumno o curso seleccionado tiene formato inválido.");
                 return;
             }
             ejecutarAccion(sistema.retirarCurso(alumno, curso));
@@ -464,6 +505,61 @@ public class VentanaMatricula extends JFrame {
 
     private void setEstado(String mensaje) {
         lblEstado.setText(mensaje == null ? "" : mensaje);
+    }
+
+    private String normalizarCodigoAlumno(String codigo) {
+        if (codigo == null) {
+            return null;
+        }
+        return codigo.trim();
+    }
+
+    private String normalizarIdCurso(String idCurso) {
+        if (idCurso == null) {
+            return null;
+        }
+        return idCurso.trim().toUpperCase();
+    }
+
+    private String normalizarNombre(String nombre) {
+        if (nombre == null) {
+            return null;
+        }
+        return nombre.trim();
+    }
+
+    private String normalizarTextoGeneral(String texto) {
+        if (texto == null) {
+            return null;
+        }
+        return texto.trim();
+    }
+
+    private boolean validarEntradaAlumno(boolean exigirNombreCarrera) {
+        String codigo = normalizarCodigoAlumno(txtCodigoAlumno.getText());
+        String nombre = normalizarNombre(txtNombreAlumno.getText());
+        String carrera = normalizarTextoGeneral(txtCarreraAlumno.getText());
+
+        if (isBlank(codigo) || !CODIGO_ALUMNO_PATTERN.matcher(codigo).matches()) {
+            mostrarAdvertencia("El código del alumno debe tener exactamente 8 dígitos.");
+            return false;
+        }
+        if (!exigirNombreCarrera) {
+            return true;
+        }
+        if (isBlank(nombre) || !NOMBRE_PATTERN.matcher(nombre).matches()) {
+            mostrarAdvertencia("El nombre solo debe tener letras y entre 3 y 80 caracteres.");
+            return false;
+        }
+        if (isBlank(carrera) || carrera.length() < 3 || carrera.length() > 80) {
+            mostrarAdvertencia("La carrera debe tener entre 3 y 80 caracteres.");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isBlank(String valor) {
+        return valor == null || valor.trim().isEmpty();
     }
 
     private void mostrarAdvertencia(String mensaje) {

@@ -1,7 +1,11 @@
 import java.util.List;
 import java.util.Scanner;
+import java.util.regex.Pattern;
 
 public class MenuPrincipal {
+    private static final Pattern CODIGO_ALUMNO_PATTERN = Pattern.compile("^\\d{8}$");
+    private static final Pattern ID_CURSO_PATTERN = Pattern.compile("^[A-Z]{3}-\\d{2}$");
+
     private static final Scanner LEER = new Scanner(System.in);
     private static final SistemaMatricula SISTEMA = new SistemaMatricula();
 
@@ -48,8 +52,10 @@ public class MenuPrincipal {
     private static void gestionarAlumno() {
         System.out.println("\n1) Registrar  2) Editar  3) Dar de baja");
         int accion = leerEntero("Acción: ");
-        System.out.print("Código alumno: ");
-        String codigo = LEER.nextLine();
+        String codigo = leerCodigoAlumno("Código alumno: ");
+        if (codigo == null) {
+            return;
+        }
 
         if (accion == 3) {
             System.out.println(SISTEMA.darBajaAlumno(codigo));
@@ -57,9 +63,9 @@ public class MenuPrincipal {
         }
 
         System.out.print("Nombre: ");
-        String nombre = LEER.nextLine();
+        String nombre = LEER.nextLine().trim();
         System.out.print("Carrera: ");
-        String carrera = LEER.nextLine();
+        String carrera = LEER.nextLine().trim();
 
         if (accion == 1) {
             System.out.println(SISTEMA.registrarAlumno(codigo, nombre, carrera));
@@ -82,34 +88,39 @@ public class MenuPrincipal {
     }
 
     private static void matricular() {
-        System.out.print("Código alumno: ");
-        String codigo = LEER.nextLine();
-        System.out.print("ID curso: ");
-        String idCurso = LEER.nextLine();
+        String codigo = leerCodigoAlumno("Código alumno: ");
+        String idCurso = leerIdCurso("ID curso: ");
+        if (codigo == null || idCurso == null) {
+            return;
+        }
         System.out.println(SISTEMA.matricularAlumnoEnCurso(codigo, idCurso));
     }
 
     private static void retirar() {
-        System.out.print("Código alumno: ");
-        String codigo = LEER.nextLine();
-        System.out.print("ID curso: ");
-        String idCurso = LEER.nextLine();
+        String codigo = leerCodigoAlumno("Código alumno: ");
+        String idCurso = leerIdCurso("ID curso: ");
+        if (codigo == null || idCurso == null) {
+            return;
+        }
         System.out.println(SISTEMA.retirarCurso(codigo, idCurso));
     }
 
     private static void registrarAprobado() {
-        System.out.print("Código alumno: ");
-        String codigo = LEER.nextLine();
-        System.out.print("ID curso aprobado: ");
-        String idCurso = LEER.nextLine();
+        String codigo = leerCodigoAlumno("Código alumno: ");
+        String idCurso = leerIdCurso("ID curso aprobado: ");
+        if (codigo == null || idCurso == null) {
+            return;
+        }
         System.out.println(SISTEMA.registrarCursoAprobado(codigo, idCurso));
     }
 
     private static void verListaClase() {
-        System.out.print("ID curso: ");
-        String idCurso = LEER.nextLine();
+        String idCurso = leerIdCurso("ID curso: ");
+        if (idCurso == null) {
+            return;
+        }
         System.out.print("Filtro por nombre (opcional): ");
-        String filtro = LEER.nextLine();
+        String filtro = LEER.nextLine().trim();
         List<String> lista = SISTEMA.verListaClase(idCurso, filtro);
         System.out.println("--- LISTA RF05 ---");
         for (String fila : lista) {
@@ -124,5 +135,25 @@ public class MenuPrincipal {
         } catch (NumberFormatException e) {
             return -1;
         }
+    }
+
+    private static String leerCodigoAlumno(String mensaje) {
+        System.out.print(mensaje);
+        String valor = LEER.nextLine().trim();
+        if (!CODIGO_ALUMNO_PATTERN.matcher(valor).matches()) {
+            System.out.println("ERROR: El código de alumno debe tener 8 dígitos.");
+            return null;
+        }
+        return valor;
+    }
+
+    private static String leerIdCurso(String mensaje) {
+        System.out.print(mensaje);
+        String valor = LEER.nextLine().trim().toUpperCase();
+        if (!ID_CURSO_PATTERN.matcher(valor).matches()) {
+            System.out.println("ERROR: El ID de curso debe tener formato ABC-99.");
+            return null;
+        }
+        return valor;
     }
 }
