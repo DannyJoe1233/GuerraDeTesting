@@ -1,0 +1,28 @@
+# Maven / Java build artifacts
+target/
+*.class
+*.jar
+*.war
+hs_err_pid*
+
+# Editor / tooling files
+*.swp
+*.swo
+*~
+Session.vim
+.idea/
+*.iml
+.settings/
+.classpath
+.project
+
+# Linux temporary files
+.fuse_hidden*
+.Trash-*
+.nfs*
+.directory
+
+# Local domain state (DataStore JSON)
+sistema-matricula.json
+datastore.json
+matricula_state.json
