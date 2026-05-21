@@ -1,22 +1,61 @@
+package GuerraDeTesting_GrupoB;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class SistemaMatricula {
     private static final Pattern CODIGO_ALUMNO_PATTERN = Pattern.compile("^\\d{8}$");
     private static final Pattern ID_CURSO_PATTERN = Pattern.compile("^[A-Z]{3}-\\d{2}$");
     private static final Pattern NOMBRE_PATTERN = Pattern.compile("^[\\p{L} .'-]{3,80}$");
+    // FIX [RF02]: ISO 8601 schedule blocks enforced
     private static final Pattern HORARIO_PATTERN = Pattern.compile(
-            "^(Lunes|Martes|Mi[eé]rcoles|Jueves|Viernes|S[aá]bado|Domingo)\\s([01]\\d|2[0-3]):[0-5]\\d$",
+            "^(Lunes|Martes|Mi[eé]rcoles|Jueves|Viernes|S[aá]bado|Domingo)\\s((?:[01]\\d|2[0-3]):[0-5]\\d)\\s*-\\s*((?:[01]\\d|2[0-3]):[0-5]\\d)$",
             Pattern.CASE_INSENSITIVE
     );
+    private static final DateTimeFormatter HORA_FORMATTER = DateTimeFormatter.ISO_LOCAL_TIME;
 
     private final Map<String, Alumno> alumnos = new LinkedHashMap<>();
     private final Map<String, Curso> cursos = new LinkedHashMap<>();
+
+    public SistemaMatricula() {
+    }
+
+    // FIX [Persistence]: JSON state hydration required
+    @JsonCreator
+    public SistemaMatricula(
+            @JsonProperty("alumnos") Map<String, Alumno> alumnos,
+            @JsonProperty("cursos") Map<String, Curso> cursos
+    ) {
+        if (alumnos != null) {
+            this.alumnos.putAll(alumnos);
+        }
+        if (cursos != null) {
+            this.cursos.putAll(cursos);
+        }
+    }
+
+    @JsonProperty("alumnos")
+    // FIX [Persistence]: Snapshot expuesto para serialización JSON
+    public Map<String, Alumno> getAlumnos() {
+        return Collections.unmodifiableMap(alumnos);
+    }
+
+    @JsonProperty("cursos")
+    // FIX [Persistence]: Snapshot expuesto para serialización JSON
+    public Map<String, Curso> getCursos() {
+        return Collections.unmodifiableMap(cursos);
+    }
 
     public String registrarAlumno(String codigo, String nombre, String carrera) {
         if (isBlank(codigo) || isBlank(nombre) || isBlank(carrera)) {
@@ -26,7 +65,8 @@ public class SistemaMatricula {
         if (normalizado == null) {
             return "FALLO RF01: El código de alumno debe tener 8 dígitos numéricos.";
         }
-        if (!NOMBRE_PATTERN.matcher(nombre.trim()).matches()) {
+        // FIX [RF01]: Símbolos puros en identidad no aceptados
+        if (!NOMBRE_PATTERN.matcher(nombre.trim()).matches() || !contieneLetra(nombre)) {
             return "FALLO RF01: El nombre contiene caracteres inválidos o longitud no permitida.";
         }
         if (!esTextoValido(carrera, 3, 80)) {
@@ -34,6 +74,10 @@ public class SistemaMatricula {
         }
         if (alumnos.containsKey(normalizado)) {
             return "FALLO RF01: El alumno " + normalizado + " ya existe.";
+        }
+        // FIX [RF01]: Duplicados con IDs distintos bloqueados
+        if (existeAlumnoDuplicado(normalizado, nombre, carrera)) {
+            return "FALLO RF01: Ya existe un alumno con el mismo nombre y carrera.";
         }
         alumnos.put(normalizado, new Alumno(normalizado, nombre, carrera));
         return "ÉXITO RF01: Alumno " + normalizado + " registrado.";
@@ -47,11 +91,16 @@ public class SistemaMatricula {
         if (isBlank(nuevoNombre) || isBlank(nuevaCarrera)) {
             return "FALLO RF01: El nombre y la carrera no pueden quedar vacíos.";
         }
-        if (!NOMBRE_PATTERN.matcher(nuevoNombre.trim()).matches()) {
+        // FIX [RF01]: Símbolos puros en identidad no aceptados
+        if (!NOMBRE_PATTERN.matcher(nuevoNombre.trim()).matches() || !contieneLetra(nuevoNombre)) {
             return "FALLO RF01: El nombre contiene caracteres inválidos o longitud no permitida.";
         }
         if (!esTextoValido(nuevaCarrera, 3, 80)) {
             return "FALLO RF01: La carrera debe tener entre 3 y 80 caracteres válidos.";
+        }
+        // FIX [RF01]: Duplicados con IDs distintos bloqueados
+        if (existeAlumnoDuplicado(alumno.getCodigo(), nuevoNombre, nuevaCarrera)) {
+            return "FALLO RF01: Ya existe un alumno con el mismo nombre y carrera.";
         }
         alumno.editarDatos(nuevoNombre, nuevaCarrera);
         return "ÉXITO RF01: Datos de " + alumno.getCodigo() + " actualizados.";
@@ -69,6 +118,8 @@ public class SistemaMatricula {
         for (String idCurso : new ArrayList<>(alumno.getCursosMatriculados())) {
             retirarCurso(alumno.getCodigo(), idCurso);
         }
+        // FIX [Integrity]: Waitlists purged on alumno removal
+        limpiarAlumnoDeListasEspera(alumno.getCodigo());
 
         alumno.darDeBaja();
         return "ÉXITO RF01: Alumno " + alumno.getCodigo() + " dado de baja.";
@@ -83,13 +134,15 @@ public class SistemaMatricula {
         if (idNormalizado == null) {
             return "FALLO RF06: Debes indicar un curso aprobado.";
         }
-        if (buscarCurso(idNormalizado) == null) {
+        if (buscarCursoInterno(idNormalizado) == null) {
             return "FALLO RF06: El curso " + idNormalizado + " no existe en el catálogo.";
         }
         if (alumno.tieneCursoAprobado(idNormalizado)) {
             return "AVISO RF06: El alumno ya tenía registrado " + idNormalizado + " como aprobado.";
         }
         alumno.registrarCursoAprobado(idNormalizado);
+        // FIX [Integrity]: Waitlists purged on curso approval
+        limpiarAlumnoDeListasEspera(alumno.getCodigo());
         return "ÉXITO RF06: Curso aprobado registrado para " + alumno.getCodigo() + ".";
     }
 
@@ -101,7 +154,7 @@ public class SistemaMatricula {
         if (id == null) {
             return "FALLO RF02: El ID del curso debe seguir el formato ABC-99.";
         }
-        if (!esTextoValido(curso.getNombre(), 3, 100)) {
+        if (!esTextoValido(curso.getNombre(), 3, 100) || !contieneLetra(curso.getNombre())) {
             return "FALLO RF02: El nombre del curso es inválido.";
         }
         if (curso.getCreditos() <= 0 || curso.getCreditos() > 10) {
@@ -110,11 +163,19 @@ public class SistemaMatricula {
         if (curso.getCuposMaximos() <= 0 || curso.getCuposMaximos() > 200) {
             return "FALLO RF02: El cupo máximo debe estar entre 1 y 200.";
         }
-        if (!HORARIO_PATTERN.matcher(curso.getHorario().trim()).matches()) {
-            return "FALLO RF02: El horario debe tener formato 'Lunes 08:00'.";
+        // FIX [RF02]: ISO 8601 bloque horario requerido
+        if (parseHorario(curso.getHorario()) == null) {
+            return "FALLO RF02: El horario debe tener formato 'Lunes 08:00-10:00' (HH:mm) y rango válido.";
         }
         if (cursos.containsKey(id)) {
             return "FALLO RF02: El curso " + id + " ya existe.";
+        }
+        // FIX [RF02]: Duplicados con IDs distintos bloqueados
+        if (existeCursoDuplicado(id, curso.getNombre(), curso.getHorario())) {
+            return "FALLO RF02: Ya existe un curso con el mismo nombre y horario.";
+        }
+        if (curso.tieneRequisitoAutoReferenciado()) {
+            return "FALLO RF02: El curso no puede ser requisito de sí mismo.";
         }
         for (String requisito : curso.getRequisitos()) {
             if (normalizarIdCurso(requisito) == null) {
@@ -136,7 +197,7 @@ public class SistemaMatricula {
             return "FALLO RF03: ID de curso inválido (formato ABC-99).";
         }
         Alumno alumno = buscarAlumno(codigoAlumno);
-        Curso curso = buscarCurso(idCurso);
+        Curso curso = buscarCursoInterno(idCurso);
 
         if (alumno == null) {
             return "FALLO RF03: Alumno no encontrado.";
@@ -149,6 +210,10 @@ public class SistemaMatricula {
         }
         if (alumno.yaEstaMatriculado(curso.getId())) {
             return "FALLO RF03: El alumno ya está matriculado en " + curso.getId() + ".";
+        }
+        // FIX [RF06]: Matrícula bloqueada si curso aprobado
+        if (alumno.tieneCursoAprobado(curso.getId())) {
+            return "FALLO RF06: El alumno ya aprobó " + curso.getId() + ".";
         }
         if (curso.estaEnListaEspera(alumno.getCodigo())) {
             return "FALLO RF08: El alumno ya está en lista de espera de " + curso.getId() + ".";
@@ -181,7 +246,7 @@ public class SistemaMatricula {
             return "FALLO RF04: ID de curso inválido (formato ABC-99).";
         }
         Alumno alumno = buscarAlumno(codigoAlumno);
-        Curso curso = buscarCurso(idCurso);
+        Curso curso = buscarCursoInterno(idCurso);
 
         if (alumno == null) {
             return "FALLO RF04: Alumno no encontrado.";
@@ -214,7 +279,7 @@ public class SistemaMatricula {
         if (!isBlank(filtroNombre) && !esTextoBusquedaValido(filtroNombre)) {
             return Collections.singletonList("Filtro inválido: usa solo letras, espacios o guiones.");
         }
-        Curso curso = buscarCurso(idCurso);
+        Curso curso = buscarCursoInterno(idCurso);
         if (curso == null) {
             return Collections.singletonList("Curso no encontrado.");
         }
@@ -264,6 +329,15 @@ public class SistemaMatricula {
     }
 
     public Curso buscarCurso(String idCurso) {
+        Curso curso = buscarCursoInterno(idCurso);
+        if (curso == null) {
+            return null;
+        }
+        // FIX [Integrity]: Defensive copy required to avoid state leakage
+        return copiarCurso(curso);
+    }
+
+    private Curso buscarCursoInterno(String idCurso) {
         String normalizado = normalizarIdCurso(idCurso);
         if (normalizado == null) {
             return null;
@@ -282,9 +356,20 @@ public class SistemaMatricula {
     }
 
     private boolean tieneCruceHorario(Alumno alumno, Curso nuevoCurso) {
+        Horario horarioNuevo = parseHorario(nuevoCurso.getHorario());
+        if (horarioNuevo == null) {
+            return false;
+        }
         for (String idMatriculado : alumno.getCursosMatriculados()) {
             Curso yaMatriculado = cursos.get(idMatriculado);
-            if (yaMatriculado != null && yaMatriculado.getHorario().equalsIgnoreCase(nuevoCurso.getHorario())) {
+            if (yaMatriculado == null) {
+                continue;
+            }
+            Horario horarioExistente = parseHorario(yaMatriculado.getHorario());
+            if (horarioExistente == null) {
+                continue;
+            }
+            if (horarioNuevo.seSolapaCon(horarioExistente)) {
                 return true;
             }
         }
@@ -329,6 +414,10 @@ public class SistemaMatricula {
         if (!CODIGO_ALUMNO_PATTERN.matcher(normalizado).matches()) {
             return null;
         }
+        // FIX [RF01]: Código sentinel rechazado
+        if ("00000000".equals(normalizado)) {
+            return null;
+        }
         return normalizado;
     }
 
@@ -351,6 +440,10 @@ public class SistemaMatricula {
         if (limpio.length() < min || limpio.length() > max) {
             return false;
         }
+        // FIX [RF01]: Texto con solo símbolos no permitido
+        if (!contieneLetraONumero(limpio)) {
+            return false;
+        }
         for (char c : limpio.toCharArray()) {
             if (!(Character.isLetterOrDigit(c) || Character.isSpaceChar(c) || c == '.' || c == '-' || c == '\'')) {
                 return false;
@@ -370,5 +463,140 @@ public class SistemaMatricula {
             }
         }
         return true;
+    }
+
+    // FIX [Integrity]: Purga global de listas de espera requerida
+    private void limpiarAlumnoDeListasEspera(String codigoAlumno) {
+        String normalizado = normalizarCodigoAlumno(codigoAlumno);
+        if (normalizado == null) {
+            return;
+        }
+        for (Curso curso : cursos.values()) {
+            curso.retirarDeListaEspera(normalizado);
+        }
+    }
+
+    private boolean contieneLetra(String texto) {
+        if (texto == null) {
+            return false;
+        }
+        for (char c : texto.toCharArray()) {
+            if (Character.isLetter(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean contieneLetraONumero(String texto) {
+        if (texto == null) {
+            return false;
+        }
+        for (char c : texto.toCharArray()) {
+            if (Character.isLetterOrDigit(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // FIX [RF01]: Detección de duplicados por identidad requerida
+    private boolean existeAlumnoDuplicado(String codigo, String nombre, String carrera) {
+        String nombreNormalizado = nombre == null ? "" : nombre.trim().toLowerCase(Locale.ROOT);
+        String carreraNormalizada = carrera == null ? "" : carrera.trim().toLowerCase(Locale.ROOT);
+        for (Alumno alumno : alumnos.values()) {
+            if (alumno.getCodigo().equalsIgnoreCase(codigo)) {
+                continue;
+            }
+            if (alumno.getNombre().trim().toLowerCase(Locale.ROOT).equals(nombreNormalizado)
+                    && alumno.getCarrera().trim().toLowerCase(Locale.ROOT).equals(carreraNormalizada)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // FIX [RF02]: Detección de duplicados por nombre/horario requerida
+    private boolean existeCursoDuplicado(String id, String nombre, String horario) {
+        String nombreNormalizado = nombre == null ? "" : nombre.trim().toLowerCase(Locale.ROOT);
+        Horario horarioNuevo = parseHorario(horario);
+        for (Curso curso : cursos.values()) {
+            if (curso.getId().equalsIgnoreCase(id)) {
+                continue;
+            }
+            if (!curso.getNombre().trim().toLowerCase(Locale.ROOT).equals(nombreNormalizado)) {
+                continue;
+            }
+            if (horarioNuevo == null) {
+                return true;
+            }
+            Horario existente = parseHorario(curso.getHorario());
+            if (existente != null && horarioNuevo.mismoBloque(existente)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Horario parseHorario(String horario) {
+        if (isBlank(horario)) {
+            return null;
+        }
+        Matcher matcher = HORARIO_PATTERN.matcher(horario.trim());
+        if (!matcher.matches()) {
+            return null;
+        }
+        String dia = matcher.group(1).trim().toLowerCase(Locale.ROOT);
+        LocalTime inicio = parseHora(matcher.group(2));
+        LocalTime fin = parseHora(matcher.group(3));
+        if (inicio == null || fin == null || !inicio.isBefore(fin)) {
+            return null;
+        }
+        return new Horario(dia, inicio, fin);
+    }
+
+    private LocalTime parseHora(String hora) {
+        try {
+            return LocalTime.parse(hora, HORA_FORMATTER);
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    private Curso copiarCurso(Curso curso) {
+        return new Curso(
+                curso.getId(),
+                curso.getNombre(),
+                curso.getCreditos(),
+                curso.getCuposMaximos(),
+                curso.getHorario(),
+                curso.getRequisitos(),
+                curso.getAlumnosMatriculados(),
+                curso.getListaEspera()
+        );
+    }
+
+    private static final class Horario {
+        private final String dia;
+        private final LocalTime inicio;
+        private final LocalTime fin;
+
+        private Horario(String dia, LocalTime inicio, LocalTime fin) {
+            this.dia = dia;
+            this.inicio = inicio;
+            this.fin = fin;
+        }
+
+        private boolean seSolapaCon(Horario otro) {
+            if (!dia.equals(otro.dia)) {
+                return false;
+            }
+            // FIX [RF07]: Solape temporal definido por bloques ISO 8601
+            return inicio.isBefore(otro.fin) && otro.inicio.isBefore(fin);
+        }
+
+        private boolean mismoBloque(Horario otro) {
+            return dia.equals(otro.dia) && inicio.equals(otro.inicio) && fin.equals(otro.fin);
+        }
     }
 }

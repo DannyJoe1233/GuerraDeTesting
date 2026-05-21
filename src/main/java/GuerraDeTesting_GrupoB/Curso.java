@@ -1,3 +1,7 @@
+package GuerraDeTesting_GrupoB;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -13,11 +17,43 @@ public class Curso {
     private final int cuposMaximos;
     private final String horario;
     private final List<String> requisitos;
+    private final boolean requisitoAutoReferenciado;
     private final Set<String> alumnosMatriculados = new LinkedHashSet<>();
     private final Queue<String> listaEspera = new ArrayDeque<>();
 
     public Curso(String id, String nombre, int creditos, int cupos, String horario) {
         this(id, nombre, creditos, cupos, horario, Collections.emptyList());
+    }
+
+    // FIX [Persistence]: JSON hydration constructor required
+    @JsonCreator
+    public Curso(
+            @JsonProperty("id") String id,
+            @JsonProperty("nombre") String nombre,
+            @JsonProperty("creditos") int creditos,
+            @JsonProperty("cuposMaximos") int cuposMaximos,
+            @JsonProperty("horario") String horario,
+            @JsonProperty("requisitos") List<String> requisitos,
+            @JsonProperty("alumnosMatriculados") List<String> alumnosMatriculados,
+            @JsonProperty("listaEspera") List<String> listaEspera
+    ) {
+        this(id, nombre, creditos, cuposMaximos, horario, requisitos);
+        if (alumnosMatriculados != null) {
+            for (String codigoAlumno : alumnosMatriculados) {
+                String normalizado = normalizarCodigo(codigoAlumno);
+                if (normalizado != null) {
+                    this.alumnosMatriculados.add(normalizado);
+                }
+            }
+        }
+        if (listaEspera != null) {
+            for (String codigoAlumno : listaEspera) {
+                String normalizado = normalizarCodigo(codigoAlumno);
+                if (normalizado != null) {
+                    this.listaEspera.offer(normalizado);
+                }
+            }
+        }
     }
 
     public Curso(String id, String nombre, int creditos, int cupos, String horario, List<String> requisitos) {
@@ -37,16 +73,22 @@ public class Curso {
         this.cuposMaximos = cupos;
         this.horario = horario.trim();
         this.requisitos = new ArrayList<>();
+        boolean autoReferenciado = false;
         if (requisitos != null) {
             for (String requisito : requisitos) {
                 if (requisito != null && !requisito.trim().isEmpty()) {
                     String normalizado = requisito.trim().toUpperCase();
-                    if (!normalizado.equals(this.id) && !this.requisitos.contains(normalizado)) {
+                    if (normalizado.equals(this.id)) {
+                        autoReferenciado = true;
+                        continue;
+                    }
+                    if (!this.requisitos.contains(normalizado)) {
                         this.requisitos.add(normalizado);
                     }
                 }
             }
         }
+        this.requisitoAutoReferenciado = autoReferenciado;
     }
 
     public boolean tieneCupo() {
@@ -116,6 +158,7 @@ public class Curso {
     public List<String> getRequisitos() { return Collections.unmodifiableList(requisitos); }
     public List<String> getAlumnosMatriculados() { return new ArrayList<>(alumnosMatriculados); }
     public List<String> getListaEspera() { return new ArrayList<>(listaEspera); }
+    boolean tieneRequisitoAutoReferenciado() { return requisitoAutoReferenciado; }
 
     private String normalizarCodigo(String codigoAlumno) {
         if (isBlank(codigoAlumno)) {

@@ -1,3 +1,5 @@
+package GuerraDeTesting_GrupoB;
+
 import java.util.List;
 import java.util.Scanner;
 import java.util.regex.Pattern;
@@ -7,10 +9,27 @@ public class MenuPrincipal {
     private static final Pattern ID_CURSO_PATTERN = Pattern.compile("^[A-Z]{3}-\\d{2}$");
 
     private static final Scanner LEER = new Scanner(System.in);
-    private static final SistemaMatricula SISTEMA = new SistemaMatricula();
+    private final SistemaMatricula sistema;
+    private final boolean cargadoDesdeArchivo;
 
     public static void main(String[] args) {
-        cargarDatosDemo();
+        DataStore dataStore = DataStore.getInstance();
+        // FIX [StateUnification]: Shared SistemaMatricula injection mandated
+        SistemaMatricula sistema = dataStore.obtenerSistema();
+        MenuPrincipal menu = new MenuPrincipal(sistema, dataStore.isCargadoDesdeArchivo());
+        menu.ejecutar();
+    }
+
+    public MenuPrincipal(SistemaMatricula sistema, boolean cargadoDesdeArchivo) {
+        this.sistema = sistema;
+        this.cargadoDesdeArchivo = cargadoDesdeArchivo;
+    }
+
+    private void ejecutar() {
+        // FIX [Persistence]: Evitar sobreescritura del estado persistido
+        if (!cargadoDesdeArchivo) {
+            cargarDatosDemo();
+        }
         int opcion = 0;
         while (opcion != 7) {
             mostrarMenu();
@@ -28,17 +47,18 @@ public class MenuPrincipal {
         }
     }
 
-    private static void cargarDatosDemo() {
-        SISTEMA.registrarCurso(new Curso("INF-01", "Testing de Sistemas", 4, 2, "Lunes 08:00"));
-        SISTEMA.registrarCurso(new Curso("INF-02", "Base de Datos", 3, 2, "Martes 10:00", List.of("INF-01")));
-        SISTEMA.registrarCurso(new Curso("INF-03", "Programación Java", 4, 1, "Lunes 08:00", List.of("INF-01")));
+    private void cargarDatosDemo() {
+        // FIX [RF02]: Demo horarios alineados a bloque ISO 8601
+        sistema.registrarCurso(new Curso("INF-01", "Testing de Sistemas", 4, 2, "Lunes 08:00-10:00"));
+        sistema.registrarCurso(new Curso("INF-02", "Base de Datos", 3, 2, "Martes 10:00-12:00", List.of("INF-01")));
+        sistema.registrarCurso(new Curso("INF-03", "Programación Java", 4, 1, "Lunes 08:00-10:00", List.of("INF-01")));
 
-        SISTEMA.registrarAlumno("20230001", "Miguel Andia", "Ingeniería de Sistemas");
-        SISTEMA.registrarAlumno("20230002", "Noelia Gonzales", "Ingeniería de Sistemas");
-        SISTEMA.registrarCursoAprobado("20230001", "INF-01");
+        sistema.registrarAlumno("20230001", "Miguel Andia", "Ingeniería de Sistemas");
+        sistema.registrarAlumno("20230002", "Noelia Gonzales", "Ingeniería de Sistemas");
+        sistema.registrarCursoAprobado("20230001", "INF-01");
     }
 
-    private static void mostrarMenu() {
+    private void mostrarMenu() {
         System.out.println("\n========== GUERRA DE TESTERS - GRUPO B ==========");
         System.out.println("1. Registrar / editar / baja de alumno (RF01)");
         System.out.println("2. Ver catálogo de cursos (RF02)");
@@ -49,7 +69,7 @@ public class MenuPrincipal {
         System.out.println("7. Salir");
     }
 
-    private static void gestionarAlumno() {
+    private void gestionarAlumno() {
         System.out.println("\n1) Registrar  2) Editar  3) Dar de baja");
         int accion = leerEntero("Acción: ");
         String codigo = leerCodigoAlumno("Código alumno: ");
@@ -58,7 +78,7 @@ public class MenuPrincipal {
         }
 
         if (accion == 3) {
-            System.out.println(SISTEMA.darBajaAlumno(codigo));
+            System.out.println(sistema.darBajaAlumno(codigo));
             return;
         }
 
@@ -68,17 +88,17 @@ public class MenuPrincipal {
         String carrera = LEER.nextLine().trim();
 
         if (accion == 1) {
-            System.out.println(SISTEMA.registrarAlumno(codigo, nombre, carrera));
+            System.out.println(sistema.registrarAlumno(codigo, nombre, carrera));
         } else if (accion == 2) {
-            System.out.println(SISTEMA.editarAlumno(codigo, nombre, carrera));
+            System.out.println(sistema.editarAlumno(codigo, nombre, carrera));
         } else {
             System.out.println("Acción inválida.");
         }
     }
 
-    private static void mostrarCatalogo() {
+    private void mostrarCatalogo() {
         System.out.println("\n--- CATÁLOGO (RF02) ---");
-        for (Curso c : SISTEMA.listarCursos()) {
+        for (Curso c : sistema.listarCursos()) {
             String req = c.getRequisitos().isEmpty() ? "-" : String.join(",", c.getRequisitos());
             System.out.println(c.getId() + " | " + c.getNombre() + " | Horario: " + c.getHorario() +
                     " | Cupos: " + c.getCuposOcupados() + "/" + c.getCuposMaximos() +
@@ -87,48 +107,48 @@ public class MenuPrincipal {
         }
     }
 
-    private static void matricular() {
+    private void matricular() {
         String codigo = leerCodigoAlumno("Código alumno: ");
         String idCurso = leerIdCurso("ID curso: ");
         if (codigo == null || idCurso == null) {
             return;
         }
-        System.out.println(SISTEMA.matricularAlumnoEnCurso(codigo, idCurso));
+        System.out.println(sistema.matricularAlumnoEnCurso(codigo, idCurso));
     }
 
-    private static void retirar() {
+    private void retirar() {
         String codigo = leerCodigoAlumno("Código alumno: ");
         String idCurso = leerIdCurso("ID curso: ");
         if (codigo == null || idCurso == null) {
             return;
         }
-        System.out.println(SISTEMA.retirarCurso(codigo, idCurso));
+        System.out.println(sistema.retirarCurso(codigo, idCurso));
     }
 
-    private static void registrarAprobado() {
+    private void registrarAprobado() {
         String codigo = leerCodigoAlumno("Código alumno: ");
         String idCurso = leerIdCurso("ID curso aprobado: ");
         if (codigo == null || idCurso == null) {
             return;
         }
-        System.out.println(SISTEMA.registrarCursoAprobado(codigo, idCurso));
+        System.out.println(sistema.registrarCursoAprobado(codigo, idCurso));
     }
 
-    private static void verListaClase() {
+    private void verListaClase() {
         String idCurso = leerIdCurso("ID curso: ");
         if (idCurso == null) {
             return;
         }
         System.out.print("Filtro por nombre (opcional): ");
         String filtro = LEER.nextLine().trim();
-        List<String> lista = SISTEMA.verListaClase(idCurso, filtro);
+        List<String> lista = sistema.verListaClase(idCurso, filtro);
         System.out.println("--- LISTA RF05 ---");
         for (String fila : lista) {
             System.out.println(fila);
         }
     }
 
-    private static int leerEntero(String mensaje) {
+    private int leerEntero(String mensaje) {
         System.out.print(mensaje);
         try {
             return Integer.parseInt(LEER.nextLine());
@@ -137,7 +157,7 @@ public class MenuPrincipal {
         }
     }
 
-    private static String leerCodigoAlumno(String mensaje) {
+    private String leerCodigoAlumno(String mensaje) {
         System.out.print(mensaje);
         String valor = LEER.nextLine().trim();
         if (!CODIGO_ALUMNO_PATTERN.matcher(valor).matches()) {
@@ -147,7 +167,7 @@ public class MenuPrincipal {
         return valor;
     }
 
-    private static String leerIdCurso(String mensaje) {
+    private String leerIdCurso(String mensaje) {
         System.out.print(mensaje);
         String valor = LEER.nextLine().trim().toUpperCase();
         if (!ID_CURSO_PATTERN.matcher(valor).matches()) {

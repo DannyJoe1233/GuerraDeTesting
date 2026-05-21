@@ -1,3 +1,5 @@
+package GuerraDeTesting_GrupoB;
+
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
@@ -10,7 +12,8 @@ public class VentanaMatricula extends JFrame {
     private static final Pattern ID_CURSO_PATTERN = Pattern.compile("^[A-Z]{3}-\\d{2}$");
     private static final Pattern NOMBRE_PATTERN = Pattern.compile("^[\\p{L} .'-]{3,80}$");
 
-    private final SistemaMatricula sistema = new SistemaMatricula();
+    private final SistemaMatricula sistema;
+    private final boolean cargadoDesdeArchivo;
 
     private final DefaultTableModel modeloAlumnos = new DefaultTableModel(
             new Object[]{"Código", "Nombre", "Carrera", "Estado", "Aprobados"}, 0
@@ -43,22 +46,29 @@ public class VentanaMatricula extends JFrame {
     private final JTextField txtNombreAlumno = new JTextField(18);
     private final JTextField txtCarreraAlumno = new JTextField(18);
 
-    public VentanaMatricula() {
+    // FIX [StateUnification]: Shared SistemaMatricula injection mandated
+    public VentanaMatricula(SistemaMatricula sistema, boolean cargadoDesdeArchivo) {
+        this.sistema = sistema;
+        this.cargadoDesdeArchivo = cargadoDesdeArchivo;
         setTitle("Sistema de Matrícula UCSM - RF01 a RF08");
         setSize(1120, 700);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        cargarDatosDemo();
+        // FIX [Persistence]: Evitar sobreescritura del estado persistido
+        if (!cargadoDesdeArchivo) {
+            cargarDatosDemo();
+        }
         construirInterfaz();
         refrescarTodo();
     }
 
     private void cargarDatosDemo() {
-        sistema.registrarCurso(new Curso("INF-01", "Testing de Sistemas", 4, 2, "Lunes 08:00"));
-        sistema.registrarCurso(new Curso("INF-02", "Base de Datos", 3, 2, "Martes 10:00", List.of("INF-01")));
-        sistema.registrarCurso(new Curso("INF-03", "Programación Java", 4, 1, "Lunes 08:00", List.of("INF-01")));
-        sistema.registrarCurso(new Curso("INF-04", "Arquitectura de Software", 3, 2, "Miércoles 10:00", List.of("INF-02")));
+        // FIX [RF02]: Demo horarios alineados a bloque ISO 8601
+        sistema.registrarCurso(new Curso("INF-01", "Testing de Sistemas", 4, 2, "Lunes 08:00-10:00"));
+        sistema.registrarCurso(new Curso("INF-02", "Base de Datos", 3, 2, "Martes 10:00-12:00", List.of("INF-01")));
+        sistema.registrarCurso(new Curso("INF-03", "Programación Java", 4, 1, "Lunes 08:00-10:00", List.of("INF-01")));
+        sistema.registrarCurso(new Curso("INF-04", "Arquitectura de Software", 3, 2, "Miércoles 10:00-12:00", List.of("INF-02")));
 
         sistema.registrarAlumno("20230001", "Miguel Andia", "Ingeniería de Sistemas");
         sistema.registrarAlumno("20230002", "Noelia Gonzales", "Ingeniería de Sistemas");
@@ -592,12 +602,15 @@ public class VentanaMatricula extends JFrame {
     }
 
     public static void main(String[] args) {
+        // FIX [StateUnification]: Shared SistemaMatricula injection mandated
+        DataStore dataStore = DataStore.getInstance();
+        SistemaMatricula sistema = dataStore.obtenerSistema();
         SwingUtilities.invokeLater(() -> {
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
             } catch (Exception ignored) {
             }
-            new VentanaMatricula().setVisible(true);
+            new VentanaMatricula(sistema, dataStore.isCargadoDesdeArchivo()).setVisible(true);
         });
     }
 }
